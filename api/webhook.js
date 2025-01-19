@@ -1,39 +1,53 @@
-export default async function handler(req, res) {
-    if (req.method === "POST") {
-        const { discordUser, message } = req.body;
+local lapis = require("lapis")
+local http = require("resty.http")
+local json = require("cjson")
 
-        if (!discordUser || !message) {
-            return res.status(400).json({ error: "Missing fields" });
-        }
+local app = lapis.Application()
 
-        // Your Discord webhook URL
-        const discordWebhookUrl = "https://discord.com/api/webhooks/1314352301896499272/oYkd-9IO_URxpdyVchMEZ5it_QblhWwU1PJHnk85yc6dLBMUd_Awp4SM4BMUn_vek5QW";
+-- Discord webhook URL
+local discordWebhookUrl = "https://discord.com/api/webhooks/1314352301896499272/oYkd-9IO_URxpdyVchMEZ5it_QblhWwU1PJHnk85yc6dLBMUd_Awp4SM4BMUn_vek5QW"
 
-        // Prepare the payload
-        const payload = {
-            content: `**${discordUser}**: ${message}`
-        };
+-- Function to send the message to Discord
+local function sendToDiscord(discordUser, message)
+    if not discordUser or not message then
+        return { error = "Missing fields" }, 400
+    end
 
-        try {
-            const discordResponse = await fetch(discordWebhookUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!discordResponse.ok) {
-                throw new Error("Failed to send message to Discord");
-            }
-
-            return res.status(200).json({ success: true });
-        } catch (error) {
-            console.error(error);
-            return res.status(500).json({ error: "Internal Server Error" });
-        }
+    local payload = {
+        content = "**" .. discordUser .. "**: " .. message
     }
 
-    res.setHeader("Allow", ["POST"]);
-    return res.status(405).json({ error: "Method not allowed" });
-}
+    -- Use http client to make the POST request to Discord webhook
+    local httpc = http.new()
+    local res, err = httpc:request_uri(discordWebhookUrl, {
+        method = "POST",
+        headers = {
+            ["Content-Type"] = "application/json"
+        },
+        body = json.encode(payload)
+    })
+
+    if not res then
+        return { error = "Failed to send message to Discord: " .. (err or "Unknown error") }, 500
+    end
+
+    if res.status ~= 200 then
+        return { error = "Failed to send message to Discord: " .. res.body }, 500
+    end
+
+    return { success = true }, 200
+end
+
+-- Route to handle POST requests
+app:post("/sendMessage", function(self)
+    local body = json.decode(self.body)
+    local discordUser = body.discordUser
+    local message = body.message
+
+    local response, status = sendToDiscord(discordUser, message)
+
+    self.status = status
+    return response
+end)
+
+return app
